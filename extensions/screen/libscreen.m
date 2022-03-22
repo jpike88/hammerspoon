@@ -751,17 +751,87 @@ static int screen_getDisplayInfo(lua_State *L) {
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG, LS_TBREAK];
 
     NSScreen *screen = get_screen_arg(L, 1);
-    CGDirectDisplayID screen_id = [[[screen deviceDescription] objectForKey:@"NSScreenNumber"] intValue];
+    CGDirectDisplayID displayID = [[[screen deviceDescription] objectForKey:@"NSScreenNumber"] intValue];
 
-    NSDictionary *deviceInfo = nil;
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-    io_service_t service = CGDisplayIOServicePort(screen_id);
-#pragma clang diagnostic pop
-    if (service) {
-        deviceInfo = (__bridge NSDictionary *)IODisplayCreateInfoDictionary(service, kIODisplayOnlyPreferredName);
-    }
-    [skin pushNSObject:deviceInfo withOptions:LS_NSPreserveLuaStringExactly];
+    
+    NSString *modelName        = nil;
+        NSString *manufacturerName = nil;
+        NSString *transport        = nil;
+        NSString *serialString     = nil;
+    unsigned long serialNumber      = 0;
+        uint8_t  manufacturedWeek  = 0;
+        uint16_t manufacturedYear  = 0;
+
+    uint32_t displaySerialNumber = CGDisplaySerialNumber(displayID);
+        uint32_t displayVendorNumber = CGDisplayVendorNumber(displayID);
+        uint32_t displayModelNumber  = CGDisplayModelNumber(displayID);
+
+        CFMutableDictionaryRef matching = IOServiceMatching("IOMobileFramebuffer");
+    
+        io_iterator_t it  = 0;
+        kern_return_t ret = IOServiceGetMatchingServices(kIOMasterPortDefault, matching, &it);
+        if (ret == noErr)
+        {
+            io_object_t ioo;
+            while ((ioo = IOIteratorNext(it)))
+            {
+                NSDictionary *properties = nil;
+
+                kern_return_t ret        = IORegistryEntryCreateCFProperties(ioo, (void *)&properties, NULL, 0);
+                if (ret == noErr)
+                {
+                    unsigned long ioregSerialNumber = ((NSNumber *)properties[@"DisplayAttributes"][@"ProductAttributes"][@"SerialNumber"]).unsignedLongValue;
+                    unsigned long ioregVendorNumber = ((NSNumber *)properties[@"DisplayAttributes"][@"ProductAttributes"][@"LegacyManufacturerID"]).unsignedLongValue;
+                    unsigned long ioregModelNumber  = ((NSNumber *)properties[@"DisplayAttributes"][@"ProductAttributes"][@"ProductID"]).unsignedLongValue;
+                    if (ioregSerialNumber == displaySerialNumber
+                        && ioregVendorNumber == displayVendorNumber
+                        && ioregModelNumber == displayModelNumber)
+                    {
+                        modelName        = properties[@"DisplayAttributes"][@"ProductAttributes"][@"ProductName"];
+                        manufacturerName = properties[@"DisplayAttributes"][@"ProductAttributes"][@"ManufacturerID"];
+                        transport        = properties[@"Transport"][@"Downstream"];
+                        serialString     = properties[@"DisplayAttributes"][@"ProductAttributes"][@"AlphanumericSerialNumber"];
+                        serialNumber     = ioregSerialNumber;
+                        manufacturedWeek = ((NSNumber *)properties[@"DisplayAttributes"][@"ProductAttributes"][@"WeekOfManufacture"]).unsignedIntValue;
+                        manufacturedYear = ((NSNumber *)properties[@"DisplayAttributes"][@"ProductAttributes"][@"YearOfManufacture"]).unsignedIntValue;
+                    }
+                }
+                IOObjectRelease(ioo);
+            }
+            IOObjectRelease(it);
+        }
+
+        if (!manufacturerName && !modelName)
+        {
+            // The IORegistry doesn't contain info on the built-in display…
+            if (displayVendorNumber == 0x610)
+            {
+                manufacturerName = @"Apple";
+                if (displayModelNumber == 0xa050)
+                    modelName = @"Built-in Liquid Retina XDR Display";
+                else
+                    modelName = @"Display";
+            }
+        }
+    
+//
+//    NSString *modelName        = nil;
+//        NSString *manufacturerName = nil;
+//        NSString *transport        = nil;
+//        NSString *serialString     = nil;
+//    unsigned long serialNumber      = 0;
+//        uint8_t  manufacturedWeek  = 0;
+//        uint16_t manufacturedYear  = 0;
+//
+//    uint32_t displaySerialNumber = CGDisplaySerialNumber(displayID);
+//        uint32_t displayVendorNumber = CGDisplayVendorNumber(displayID);
+//        uint32_t displayModelNumber  = CGDisplayModelNumber(displayID);
+
+    
+    NSMutableDictionary * displayInfo = [[NSMutableDictionary alloc] init];
+    
+    displayInfo[@"wat"] = 3;
+    
     return 1;
 }
 
